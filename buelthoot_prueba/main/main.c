@@ -32,18 +32,25 @@
 #include "esp_event.h"
 #include "esp_netif.h"
 #include "mqtt_client.h" // para MQTT
+#include "ssd1306.h"
 
 
 #define THINGSBOARD_TOKEN "lEYres0ei1eXu7s49yFw"
 #define THINGSBOARD_SERVER "demo.thingsboard.io"
 #define THINGSBOARD_PORT 1883  // Para MQTT
 static esp_mqtt_client_handle_t mqtt_client;
+SSD1306_t dev;
+
+#define I2C_SDA GPIO_NUM_21
+#define I2C_SCL GPIO_NUM_22
 
 #define WIFI_SSID "iPhone Jaime"
-#define WIFI_PASS "James100" 
+#define WIFI_PASS "James100"
+
 
 #define WIFI_CONNECTED_BIT BIT0
 #define WIFI_FAIL_BIT      BIT1
+
 
 #define GATTC_TAG "GATTC_DEMO"
 #define TAG "Thingsboard"
@@ -55,9 +62,12 @@ static esp_mqtt_client_handle_t mqtt_client;
 #define MAXIMUM_RETRY 5
 
 
+
+
 static EventGroupHandle_t s_wifi_event_group;
 static const char *TAG_WIFI = "WiFi";
 static int s_retry_num = 0;
+
 
 static const char remote_device_name[] = "Xiaomi Pad 6";
 static bool connect    = false;
@@ -73,6 +83,7 @@ static void gattc_profile_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_
 void mqtt_event_handler(esp_mqtt_event_handle_t event);
 void mqtt_connect();
 void read_battery_level(TimerHandle_t xTimer);
+
 
 static esp_bt_uuid_t remote_filter_service_uuid = {
    .len = ESP_UUID_LEN_16,
@@ -105,6 +116,7 @@ struct gattc_profile_inst {
    esp_bd_addr_t remote_bda;
 };
 
+
 static void event_handler(void* arg, esp_event_base_t event_base,
                           int32_t event_id, void* event_data) {
     if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
@@ -127,18 +139,23 @@ static void event_handler(void* arg, esp_event_base_t event_base,
     }
 }
 
+
 static void wifi_init(void) {
     s_wifi_event_group = xEventGroupCreate();
+
 
     ESP_ERROR_CHECK(esp_netif_init());
     ESP_ERROR_CHECK(esp_event_loop_create_default());
     esp_netif_create_default_wifi_sta();
 
+
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
     ESP_ERROR_CHECK(esp_wifi_init(&cfg));
 
+
     esp_event_handler_instance_t instance_any_id;
     esp_event_handler_instance_t instance_got_ip;
+
 
     ESP_ERROR_CHECK(esp_event_handler_instance_register(WIFI_EVENT,
                                                         ESP_EVENT_ANY_ID,
@@ -151,11 +168,13 @@ static void wifi_init(void) {
                                                         NULL,
                                                         &instance_got_ip));
 
+
     wifi_config_t wifi_config = {
         .sta = {
             .ssid = WIFI_SSID,
             .password = WIFI_PASS,
             .threshold.authmode = WIFI_AUTH_WPA2_PSK,
+
 
             .pmf_cfg = {
                 .capable = true,
@@ -164,11 +183,14 @@ static void wifi_init(void) {
         },
     };
 
+
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
     ESP_ERROR_CHECK(esp_wifi_start());
 
+
     ESP_LOGI(TAG_WIFI, "WiFi initialization completed");
+
 
     /* Wait for the connection to establish */
     EventBits_t bits = xEventGroupWaitBits(s_wifi_event_group,
@@ -176,6 +198,7 @@ static void wifi_init(void) {
                                            pdFALSE,
                                            pdFALSE,
                                            portMAX_DELAY);
+
 
     if (bits & WIFI_CONNECTED_BIT) {
         ESP_LOGI(TAG_WIFI, "Connected to AP: %s", WIFI_SSID);
@@ -185,18 +208,20 @@ static void wifi_init(void) {
         ESP_LOGE(TAG_WIFI, "Unexpected event");
     }
 
+
     /* Clean up */
     ESP_ERROR_CHECK(esp_event_handler_instance_unregister(IP_EVENT, IP_EVENT_STA_GOT_IP, instance_got_ip));
     ESP_ERROR_CHECK(esp_event_handler_instance_unregister(WIFI_EVENT, ESP_EVENT_ANY_ID, instance_any_id));
     vEventGroupDelete(s_wifi_event_group);
 }
 
+
 void mqtt_event_handler(esp_mqtt_event_handle_t event) {
     if (event == NULL) {
         ESP_LOGE(TAG, "Manejador de eventos MQTT: evento nulo");
         return;
     }
-    
+   
     switch (event->event_id) {
         case MQTT_EVENT_CONNECTED:
             ESP_LOGI(TAG, "Conectado a ThingsBoard MQTT");
@@ -212,13 +237,16 @@ void mqtt_event_handler(esp_mqtt_event_handle_t event) {
     }
 }
 
+
 void mqtt_connect() {
     esp_mqtt_client_config_t mqtt_config = {
         .broker.address.uri = "mqtt://" THINGSBOARD_SERVER,
         .credentials.username = THINGSBOARD_TOKEN,
         .broker.address.port = THINGSBOARD_PORT,
 
+
     };
+
 
     mqtt_client = esp_mqtt_client_init(&mqtt_config);
     if (mqtt_client == NULL) {
@@ -226,10 +254,13 @@ void mqtt_connect() {
         return;
     }
 
+
     esp_mqtt_client_register_event(mqtt_client, ESP_EVENT_ANY_ID, mqtt_event_handler, NULL);
+
 
     esp_mqtt_client_start(mqtt_client);
 }
+
 
 /* One gatt-based profile one app_id and one gattc_if, this array will store the gattc_if returned by ESP_GATTS_REG_EVT */
 static struct gattc_profile_inst gl_profile_tab[PROFILE_NUM] = {
@@ -352,32 +383,32 @@ static void gattc_profile_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_
            }
        }
         break;
-	   case ESP_GATTC_REG_FOR_NOTIFY_EVT: {
-	    ESP_LOGI(GATTC_TAG, "ESP_GATTC_REG_FOR_NOTIFY_EVT");
-	    if (p_data->reg_for_notify.status == ESP_GATT_OK) {
-	        ESP_LOGI(GATTC_TAG, "Registered for notifications. Setting up periodic read...");
-	
-	        // Crea un temporizador para leer la característica cada 5 segundos
-	        read_timer = xTimerCreate(
-	            "ReadBatteryLevel",         // Nombre del temporizador
-	            pdMS_TO_TICKS(5000),        // Período de 5000 ms (5 segundos)
-	            pdTRUE,                     // Es un temporizador periódico
-	            (void *)0,                  // ID opcional (puedes usar NULL)
-	            read_battery_level          // Callback de lectura
-	        );
-	
-	        if (read_timer != NULL) {
-	            // Inicia el temporizador
-	            xTimerStart(read_timer, 0);
-	            ESP_LOGI(GATTC_TAG, "Read timer started successfully");
-	        } else {
-	            ESP_LOGE(GATTC_TAG, "Failed to create read timer");
-	        }
-	    } else {
-	        ESP_LOGE(GATTC_TAG, "Failed to register for notifications, status: %d", p_data->reg_for_notify.status);
-	    }
-	    break;
-	}
+       case ESP_GATTC_REG_FOR_NOTIFY_EVT: {
+        ESP_LOGI(GATTC_TAG, "ESP_GATTC_REG_FOR_NOTIFY_EVT");
+        if (p_data->reg_for_notify.status == ESP_GATT_OK) {
+            ESP_LOGI(GATTC_TAG, "Registered for notifications. Setting up periodic read...");
+   
+            // Crea un temporizador para leer la característica cada 5 segundos
+            read_timer = xTimerCreate(
+                "ReadBatteryLevel",         // Nombre del temporizador
+                pdMS_TO_TICKS(5000),        // Período de 5000 ms (5 segundos)
+                pdTRUE,                     // Es un temporizador periódico
+                (void *)0,                  // ID opcional (puedes usar NULL)
+                read_battery_level          // Callback de lectura
+            );
+   
+            if (read_timer != NULL) {
+                // Inicia el temporizador
+                xTimerStart(read_timer, 0);
+                ESP_LOGI(GATTC_TAG, "Read timer started successfully");
+            } else {
+                ESP_LOGE(GATTC_TAG, "Failed to create read timer");
+            }
+        } else {
+            ESP_LOGE(GATTC_TAG, "Failed to register for notifications, status: %d", p_data->reg_for_notify.status);
+        }
+        break;
+    }
    case ESP_GATTC_NOTIFY_EVT:
        if (p_data->notify.is_notify){
            ESP_LOGI(GATTC_TAG, "ESP_GATTC_NOTIFY_EVT, receive notify value:");
@@ -419,16 +450,35 @@ static void gattc_profile_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_
        }
        ESP_LOGI(GATTC_TAG, "write char success ");
        break;
-      
+     
         case ESP_GATTC_READ_CHAR_EVT:
             if (p_data->read.status == ESP_GATT_OK) {
+			    
                 int battery_level = p_data->read.value[0];
                 ESP_LOGI(GATTC_TAG, "Battery Level Read: %d%%", battery_level);
-
+                char buffer[256];
+                char buffer_1[30];
+                char buffer_2[30];
+                char buffer_3[30];
+                char buffer_4[30];
+                snprintf(buffer, sizeof(buffer), "Battery: %d", battery_level);
+                snprintf(buffer_1, sizeof(buffer_1), "SISTEMA");
+                snprintf(buffer_2, sizeof(buffer_2), "MONITORIZACION");
+                snprintf(buffer_3, sizeof(buffer_3), "BLE");
+                snprintf(buffer_4, sizeof(buffer_4), "Datos:");
+                // Dibujar el texto en la pantalla
+                ssd1306_display_text(&dev, 4, buffer, strlen(buffer), false);
+                ssd1306_display_text(&dev, 0, buffer_1, strlen(buffer_1), false);
+                ssd1306_display_text(&dev, 1, buffer_2, strlen(buffer_2), false);
+                ssd1306_display_text(&dev, 2, buffer_3, strlen(buffer_3), false);
+                ssd1306_display_text(&dev, 3, buffer_4, strlen(buffer_4), false);
+                // Actualizar el display
+                ssd1306_show_buffer(&dev);  
                 // Publicar en MQTT
                 char telemetry[64];
                 snprintf(telemetry, sizeof(telemetry), "{\"battery_level\": %d}", battery_level);
                 int msg_id = esp_mqtt_client_publish(mqtt_client, "v1/devices/me/telemetry", telemetry, 0, 1, 0);
+
 
                 if (msg_id >= 0) {
                     ESP_LOGI(TAG, "Sent telemetry to ThingsBoard: %s", telemetry);
@@ -581,8 +631,15 @@ void app_main(void)
        ret = nvs_flash_init();
    }
     ESP_ERROR_CHECK( ret );
+    				
+				i2c_master_init(&dev, I2C_SDA, I2C_SCL, -1);
+			   //Parte del display
+			   // Inicializar el display SSD1306
+			    ssd1306_init(&dev, 128, 64); // Ajusta el tamaño según tu pantalla
+			    ssd1306_clear_screen(&dev, false); // Limpia la pantalla al inicio
     // Initialize WiFi
     wifi_init();
+
 
    ESP_ERROR_CHECK(esp_bt_controller_mem_release(ESP_BT_MODE_CLASSIC_BT));
    esp_bt_controller_config_t bt_cfg = BT_CONTROLLER_INIT_CONFIG_DEFAULT();
@@ -627,4 +684,11 @@ void app_main(void)
        ESP_LOGE(GATTC_TAG, "set local  MTU failed, error code = %x", local_mtu_ret);
    }
 }
+
+
+
+
+
+
+
 
