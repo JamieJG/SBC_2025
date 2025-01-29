@@ -40,7 +40,7 @@
 static esp_mqtt_client_handle_t mqtt_client;
 
 #define WIFI_SSID "iPhone Jaime"
-#define WIFI_PASS "James100" // Cambia por la contraseña de la red
+#define WIFI_PASS "James100" 
 
 #define WIFI_CONNECTED_BIT BIT0
 #define WIFI_FAIL_BIT      BIT1
